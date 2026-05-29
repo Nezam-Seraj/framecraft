@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f0f1a">
+<link rel="manifest" href="/manifest.json">
+<title>FrameCraft — Screenshot Beautifier</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0f0f1a;--card:#1a1a2e;--accent:#7c3aed;--accent2:#ec4899;--text:#f0f0f0;
+  --dim:#8888a0;--radius:16px;--border:#2a2a3e}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);
+  min-height:100dvh;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
+.app{width:100%;max-width:500px;margin:0 auto;min-height:100dvh;position:relative}
+.screen{display:none;flex-direction:column;padding:20px;min-height:100dvh}
+.screen.active{display:flex}
+.header{text-align:center;margin-bottom:20px}
+.header h1{font-size:1.5rem;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.header p{color:var(--dim);font-size:0.85rem;margin-top:4px}
+
+/* Upload */
+.dropzone{border:2px dashed var(--border);border-radius:var(--radius);padding:48px 24px;
+  text-align:center;cursor:pointer;transition:all 0.2s;background:var(--card)}
+.dropzone:hover,.dropzone.drag{border-color:var(--accent);background:rgba(124,58,237,0.05)}
+.dropzone-icon{font-size:3rem;margin-bottom:12px}
+.dropzone-text{font-size:1rem;font-weight:600}
+.dropzone-hint{color:var(--dim);font-size:0.8rem;margin-top:6px}
+.paste-btn{background:var(--card);border:1px solid var(--border);color:var(--text);
+  padding:10px 20px;border-radius:50px;font-size:0.85rem;cursor:pointer;margin-top:16px;font-weight:600}
+.paste-btn:active{transform:scale(0.96)}
+
+/* Editor */
+.editor-layout{display:flex;flex-direction:column;gap:16px}
+.preview-area{position:relative;background:var(--card);border-radius:var(--radius);
+  overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:300px}
+.preview-area canvas{max-width:100%;max-height:60vh}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;overflow-x:auto;padding-bottom:4px}
+.tool-group{display:flex;flex-wrap:wrap;gap:6px}
+.tool-group-label{font-size:0.7rem;color:var(--dim);text-transform:uppercase;
+  letter-spacing:1px;width:100%;margin-bottom:2px}
+.tool-btn{background:var(--card);border:2px solid var(--border);color:var(--text);
+  padding:8px 14px;border-radius:12px;font-size:0.8rem;cursor:pointer;font-weight:600;
+  transition:all 0.15s;white-space:nowrap}
+.tool-btn:active{transform:scale(0.94)}
+.tool-btn.active{border-color:var(--accent);background:rgba(124,58,237,0.15)}
+.tool-btn.color-swatch{padding:6px;width:36px;height:36px;border-radius:50%}
+
+/* Sliders */
+.slider-group{width:100%;margin:4px 0}
+.slider-group label{font-size:0.75rem;color:var(--dim);display:flex;justify-content:space-between;margin-bottom:2px}
+.slider-group input[type=range]{width:100%;accent-color:var(--accent)}
+
+/* Export bar */
+.export-bar{display:flex;gap:8px;margin-top:12px}
+.btn{background:var(--accent);color:#fff;border:none;padding:12px 20px;border-radius:50px;
+  font-size:0.9rem;font-weight:700;cursor:pointer;transition:transform 0.15s;flex:1;text-align:center}
+.btn:active{transform:scale(0.96)}
+.btn-outline{background:transparent;border:2px solid var(--accent);color:var(--accent)}
+
+/* Annotation mode */
+.annotation-tip{background:var(--card);border:1px solid var(--gold);color:var(--gold);
+  padding:8px 16px;border-radius:12px;font-size:0.8rem;text-align:center;margin:8px 0}
+
+/* Error */
+.error-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;
+  align-items:center;justify-content:center;z-index:9999}
+.error-dialog{background:var(--card);border-radius:24px;padding:32px;text-align:center;max-width:320px}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--card);
+  color:var(--text);padding:10px 24px;border-radius:50px;font-size:0.85rem;
+  z-index:999;animation:toastIn 0.3s ease,toastOut 0.3s ease 2s forwards}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes toastOut{from{opacity:1}to{opacity:0}}
+
+.pro-badge{position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;
+  font-size:0.65rem;font-weight:800;padding:4px 10px;border-radius:50px}
+.export-counter{text-align:center;color:var(--dim);font-size:0.75rem;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFile(this)">
+
+<script>
+// ═══════════════════════════════════════════
+//  FRAMECRAFT — Screenshot Beautifier
+// ═══════════════════════════════════════════
+
+window.addEventListener('error',()=>{
+  document.getElementById('app').innerHTML=`<div class="error-overlay"><div class="error-dialog">
+    <h2>⚠️ Oops!</h2><p>Something went wrong.</p>
+    <button class="btn" onclick="init()" style="margin-top:16px">🔄 Reload</button></div></div>`;
+});
+
+// State
+const S={screen:'upload',image:null,style:'gradient-purple',frame:'none',
+  cornerRadius:24,shadow:true,annotationMode:false,annotations:[],
+  exports:load('exports',0),isPro:load('pro',false)};
+const MAX_FREE_EXPORTS=3;
+
+function load(k,d){try{return JSON.parse(localStorage.getItem('fc_'+k))}catch(e){return d}}
+function save(k,v){localStorage.setItem('fc_'+k,JSON.stringify(v))}
+function toast(m){let t=document.querySelector('.toast');if(t)t.remove();
+  t=document.createElement('div');t.className='toast';t.textContent=m;
+  document.body.appendChild(t);setTimeout(()=>t.remove(),2500)}
+
+// Gradients
+const GRADIENTS=[
+  {id:'gradient-purple',name:'Purple Haze',colors:['#7c3aed','#ec4899']},
+  {id:'gradient-ocean',name:'Ocean Blue',colors:['#0ea5e9','#2dd4bf']},
+  {id:'gradient-sunset',name:'Sunset',colors:['#f97316','#ef4444']},
+  {id:'gradient-mint',name:'Mint Fresh',colors:['#22c55e','#10b981']},
+  {id:'gradient-midnight',name:'Midnight',colors:['#1e1b4b','#312e81']},
+  {id:'gradient-rose',name:'Rose Gold',colors:['#f43f5e','#fb7185']},
+  {id:'gradient-amber',name:'Amber Glow',colors:['#f59e0b','#d97706']},
+  {id:'gradient-slate',name:'Slate',colors:['#334155','#1e293b']},
+];
+
+const FRAMES=[
+  {id:'none',name:'No Frame',draw:null},
+  {id:'iphone',name:'iPhone',draw:(ctx,x,y,w,h)=>{drawPhoneFrame(ctx,x,y,w,h,'iPhone')}},
+  {id:'macbook',name:'MacBook',draw:(ctx,x,y,w,h)=>{drawLaptopFrame(ctx,x,y,w,h)}},
+  {id:'browser',name:'Browser',draw:(ctx,x,y,w,h)=>{drawBrowserFrame(ctx,x,y,w,h)}},
+  {id:'shadow-box',name:'Shadow Box',draw:(ctx,x,y,w,h)=>{drawShadowBox(ctx,x,y,w,h)}},
+  {id:'polaroid',name:'Polaroid',draw:(ctx,x,y,w,h)=>{drawPolaroid(ctx,x,y,w,h)}},
+];
+
+function drawPhoneFrame(ctx,x,y,w,h,label){
+  const pad=30;ctx.fillStyle='#1a1a1a';ctx.strokeStyle='#333';ctx.lineWidth=2;
+  const fw=w+pad*2,fh=h+pad*2+60,fx=x-pad,fy=y-pad-40;
+  roundRect(ctx,fx,fy,fw,fh,20);ctx.fill();ctx.stroke();
+  // Notch
+  ctx.fillStyle='#0a0a0a';roundRect(ctx,fx+fw/2-30,fy+6,60,6,3);ctx.fill();
+  // Home indicator
+  ctx.fillStyle='#444';roundRect(ctx,fx+fw/2-40,fy+fh-10,80,3,2);ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='bold 10px system-ui';
+  ctx.textAlign='center';ctx.fillText(label,fx+fw/2,fy+fh-20);
+}
+
+function drawLaptopFrame(ctx,x,y,w,h){
+  const pad=40;ctx.fillStyle='#2d2d2d';ctx.strokeStyle='#444';ctx.lineWidth=2;
+  const fw=w+pad*2,fh=h+pad+30,fx=x-pad,fy=y-pad;
+  roundRect(ctx,fx,fy,fw,fh,8);ctx.fill();ctx.stroke();
+  // Screen
+  ctx.fillStyle='#0f0f1a';ctx.fillRect(x-2,y-2,w+4,h+4);
+  // Base
+  const bw=fw+80,bh=12,bx=fx-40,by=fy+fh+4;
+  ctx.fillStyle='#333';roundRect(ctx,bx,by,bw,bh,4);ctx.fill();
+  // Trackpad
+  ctx.fillStyle='#444';roundRect(ctx,bx+bw/4,by+3,bw/2,4,2);ctx.fill();
+}
+
+function drawBrowserFrame(ctx,x,y,w,h){
+  const barH=32,pad=20;ctx.fillStyle='#2d2d2d';ctx.strokeStyle='#444';ctx.lineWidth=2;
+  const fw=w+pad*2,fh=h+barH+pad,fx=x-pad,fy=y-barH-pad;
+  roundRect(ctx,fx,fy,fw,fh,8);ctx.fill();ctx.stroke();
+  // Title bar
+  ctx.fillStyle='#ff5f57';ctx.beginPath();ctx.arc(fx+16,fy+16,5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#ffbd2e';ctx.beginPath();ctx.arc(fx+30,fy+16,5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#28c840';ctx.beginPath();ctx.arc(fx+44,fy+16,5,0,Math.PI*2);ctx.fill();
+  // URL bar
+  ctx.fillStyle='#1a1a2e';roundRect(ctx,fx+60,fy+10,fw-80,14,7);ctx.fill();
+  ctx.fillStyle='#666';ctx.font='9px system-ui';ctx.textAlign='left';
+  ctx.fillText('🔒 framecraft.app',fx+68,fy+20);
+}
+
+function drawShadowBox(ctx,x,y,w,h){
+  const pad=40;ctx.shadowColor='rgba(0,0,0,0.4)';ctx.shadowBlur=30;
+  ctx.shadowOffsetX=0;ctx.shadowOffsetY=8;
+  ctx.fillStyle='#fff';roundRect(ctx,x-pad,y-pad,w+pad*2,h+pad*2,8);ctx.fill();
+  ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+  ctx.strokeStyle='#e5e5e5';ctx.lineWidth=1;roundRect(ctx,x-pad,y-pad,w+pad*2,h+pad*2,8);ctx.stroke();
+}
+
+function drawPolaroid(ctx,x,y,w,h){
+  const bPad=30,tPad=30,lrPad=25;ctx.fillStyle='#fff';
+  roundRect(ctx,x-lrPad,y-tPad,w+lrPad*2,h+tPad+bPad,4);ctx.fill();
+  ctx.strokeStyle='#e5e5e5';ctx.lineWidth=1;
+  roundRect(ctx,x-lrPad,y-tPad,w+lrPad*2,h+tPad+bPad,4);ctx.stroke();
+  // Text area
+  ctx.fillStyle='#999';ctx.font='italic 10px Georgia';ctx.textAlign='center';
+  ctx.fillText('frame crafted',x+w/2,y+h+bPad-8);
+}
+
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+}
+
+// ── Render Engine ────────────────────────
+function renderCanvas(){
+  if(!S.image) return;
+  const c=document.getElementById('preview-canvas');
+  if(!c) return;
+  const img=S.image;
+  // Calculate layout
+  let pw=img.width,ph=img.height;
+  const maxW=c.parentElement.clientWidth-32,maxH=c.parentElement.clientHeight-32;
+  if(pw>maxW){ph*=(maxW/pw);pw=maxW}
+  if(ph>maxH){pw*=(maxH/ph);ph=maxH}
+
+  const pad=FRAMES.find(f=>f.id===S.frame)?.draw?50:30;
+  c.width=pw+pad*2;c.height=ph+pad*2;
+  const x=pad,y=pad;
+  const ctx=c.getContext('2d');
+
+  // Background gradient
+  if(S.style.startsWith('gradient-')){
+    const g=GRADIENTS.find(g=>g.id===S.style);
+    if(g){
+      const grad=ctx.createLinearGradient(0,0,c.width,c.height);
+      grad.addColorStop(0,g.colors[0]);grad.addColorStop(1,g.colors[1]);
+      ctx.fillStyle=grad;ctx.fillRect(0,0,c.width,c.height);
+    }
+  }
+
+  // Device frame
+  const frame=FRAMES.find(f=>f.id===S.frame);
+  if(frame&&frame.draw){frame.draw(ctx,x,y,pw,ph)}
+  else{
+    // Shadow
+    if(S.shadow){ctx.shadowColor='rgba(0,0,0,0.3)';ctx.shadowBlur=20;ctx.shadowOffsetX=0;ctx.shadowOffsetY=4}
+    // Background for screenshot
+    ctx.fillStyle='#fff';roundRect(ctx,x,y,pw,ph,S.cornerRadius);ctx.fill();
+    ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+  }
+
+  // Draw screenshot
+  ctx.save();
+  if(!frame||!frame.draw){
+    // Clip to rounded rect
+    ctx.beginPath();roundRect(ctx,x,y,pw,ph,S.cornerRadius);ctx.clip();
+  }
+  ctx.drawImage(img,x,y,pw,ph);
+
+  // Annotations
+  S.annotations.forEach(a=>{
+    ctx.strokeStyle=a.color||'#ff4757';ctx.lineWidth=3;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(a.x1,a.y1);ctx.lineTo(a.x2,a.y2);ctx.stroke();
+    // Arrowhead
+    const angle=Math.atan2(a.y2-a.y1,a.x2-a.x1);
+    const len=12;
+    ctx.beginPath();
+    ctx.moveTo(a.x2,a.y2);
+    ctx.lineTo(a.x2-len*Math.cos(angle-Math.PI/6),a.y2-len*Math.sin(angle-Math.PI/6));
+    ctx.moveTo(a.x2,a.y2);
+    ctx.lineTo(a.x2-len*Math.cos(angle+Math.PI/6),a.y2-len*Math.sin(angle+Math.PI/6));
+    ctx.stroke();
+    if(a.text){
+      ctx.fillStyle=a.color||'#ff4757';ctx.font='bold 16px system-ui';
+      ctx.fillText(a.text,a.x2+10,a.y2-10);
+    }
+  });
+  ctx.restore();
+
+  // Brand watermark (free tier)
+  if(!S.isPro){
+    ctx.fillStyle='rgba(255,255,255,0.4)';ctx.font='10px system-ui';
+    ctx.textAlign='right';ctx.fillText('Made with FrameCraft',c.width-12,c.height-10);
+  }
+}
+
+// ── Screens ──────────────────────────────
+function render(){
+  const el=document.getElementById('app');
+  if(S.screen==='upload') el.innerHTML=renderUpload();
+  else if(S.screen==='editor'){el.innerHTML=renderEditor();renderCanvas()}
+}
+function init(){S.screen=S.image?'editor':'upload';render()}
+
+function renderUpload(){
+  return `<div class="screen active">
+    <div class="header"><h1>📸 FrameCraft</h1><p>Beautiful screenshots in seconds</p></div>
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+      <div class="dropzone-icon">🖼️</div>
+      <div class="dropzone-text">Drop your screenshot here</div>
+      <div class="dropzone-hint">or tap to browse · PNG, JPG, WebP</div>
+    </div>
+    <button class="paste-btn" onclick="pasteImage()" style="margin-top:12px;width:100%">📋 Paste from Clipboard</button>
+    ${S.isPro?'<div class="pro-badge">PRO</div>':''}
+    ${!S.isPro?`<button class="paste-btn" onclick="goPro()" style="margin-top:8px;width:100%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none">⭐ Go Pro · $2.99 lifetime</button>`:''}
+  </div>`;
+}
+
+function renderEditor(){
+  return `<div class="screen active">
+    <div class="editor-layout">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <button class="tool-btn" onclick="S.image=null;S.screen='upload';render()">← Back</button>
+        <span style="font-weight:700;color:var(--dim)">FrameCraft</span>
+        <button class="tool-btn" onclick="resetAll()">🔄 Reset</button>
+      </div>
+      <div class="preview-area" id="preview-area"><canvas id="preview-canvas"></canvas></div>
+      ${S.annotationMode?'<div class="annotation-tip">🎯 Annotation mode: tap and drag to draw an arrow</div>':''}
+      <div class="toolbar">
+        <div class="tool-group">
+          <div class="tool-group-label">Background</div>
+          ${GRADIENTS.map(g=>`<button class="tool-btn color-swatch ${S.style===g.id?'active':''}"
+            style="background:linear-gradient(135deg,${g.colors[0]},${g.colors[1]})" title="${g.name}"
+            onclick="S.style='${g.id}';renderCanvas();updateActive()"></button>`).join('')}
+        </div>
+        <div class="tool-group">
+          <div class="tool-group-label">Frame</div>
+          ${FRAMES.map(f=>`<button class="tool-btn ${S.frame===f.id?'active':''}"
+            onclick="S.frame='${f.id}';renderCanvas();updateActive()">${f.name}</button>`).join('')}
+        </div>
+        <div class="tool-group">
+          <div class="tool-group-label">Tools</div>
+          <button class="tool-btn ${S.annotationMode?'active':''}" onclick="toggleAnnotations()">↗ Annotate</button>
+          <button class="tool-btn" onclick="S.shadow=!S.shadow;renderCanvas();updateActive()"
+            style="${S.shadow?'border-color:var(--accent)':''}">${S.shadow?'🌑 Shadow On':'☀️ Shadow Off'}</button>
+        </div>
+      </div>
+      <div class="slider-group">
+        <label>Rounded Corners <span>${S.cornerRadius}px</span></label>
+        <input type="range" min="0" max="40" value="${S.cornerRadius}"
+          oninput="S.cornerRadius=parseInt(this.value);this.nextElementSibling.textContent=S.cornerRadius+'px';renderCanvas()">
+        <span style="display:none"></span>
+      </div>
+      <div class="export-bar">
+        <button class="btn" onclick="exportImage()">📥 Export PNG</button>
+        <button class="btn btn-outline" onclick="copyImage()">📋 Copy</button>
+      </div>
+      <div class="export-counter">${S.isPro?'∞':'Free exports: '+(MAX_FREE_EXPORTS-S.exports)+' remaining'}</div>
+    </div></div>`;
+}
+
+function updateActive(){
+  document.querySelectorAll('.tool-btn.color-swatch').forEach(b=>{
+    S.style===b.onclick?.toString().match(/'([^']+)'/)?.[1]?b.classList.add('active'):b.classList.remove('active')});
+}
+
+// ── Image Handling ───────────────────────
+function handleFile(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{const img=new Image();img.onload=()=>{S.image=img;S.screen='editor';render()};img.src=e.target.result}
+  reader.readAsDataURL(file);input.value='';
+}
+
+async function pasteImage(){
+  try{const items=await navigator.clipboard.read();
+    for(const item of items){
+      for(const type of item.types){
+        if(type.startsWith('image/')){
+          const blob=await item.getType(type);
+          const reader=new FileReader();
+          reader.onload=e=>{const img=new Image();
+            img.onload=()=>{S.image=img;S.screen='editor';render()};img.src=e.target.result}
+          reader.readAsDataURL(blob);return;
+        }
+      }
+    }
+    toast('No image found in clipboard');
+  }catch(e){toast('Clipboard access denied. Try drag & drop instead.')}
+}
+
+// Drop zone
+document.addEventListener('DOMContentLoaded',()=>{
+  const dz=document.getElementById('dropzone');
+  if(dz){
+    dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag')});
+    dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+    dz.addEventListener('drop',e=>{
+      e.preventDefault();dz.classList.remove('drag');
+      const file=e.dataTransfer.files[0];
+      if(file&&file.type.startsWith('image/')){
+        const inp=document.getElementById('file-input');
+        const dt=new DataTransfer();dt.items.add(file);inp.files=dt.files;
+        handleFile(inp);
+      }
+    });
+  }
+  init();
+});
+
+// ── Annotations ──────────────────────────
+function toggleAnnotations(){
+  S.annotationMode=!S.annotationMode;
+  if(S.annotationMode){
+    const c=document.getElementById('preview-canvas');
+    c.style.cursor='crosshair';
+    let startX,startY;
+    c.onmousedown=e=>{
+      const rect=c.getBoundingClientRect();
+      const scaleX=c.width/rect.width,scaleY=c.height/rect.height;
+      startX=e.offsetX*scaleX;startY=e.offsetY*scaleY;
+    };
+    c.onmouseup=e=>{
+      const rect=c.getBoundingClientRect();
+      const scaleX=c.width/rect.width,scaleY=c.height/rect.height;
+      const endX=e.offsetX*scaleX,endY=e.offsetY*scaleY;
+      if(startX&&Math.abs(endX-startX)>10){
+        const txt=prompt('Add label (optional):');
+        S.annotations.push({x1:startX,y1:startY,x2:endX,y2:endY,color:'#ff4757',text:txt||''});
+        renderCanvas();
+      }
+      startX=null;
+    };
+    c.ontouchstart=e=>{
+      const touch=e.touches[0];const rect=c.getBoundingClientRect();
+      const scaleX=c.width/rect.width,scaleY=c.height/rect.height;
+      startX=(touch.clientX-rect.left)*scaleX;startY=(touch.clientY-rect.top)*scaleY;
+    };
+    c.ontouchend=e=>{
+      const touch=e.changedTouches[0];const rect=c.getBoundingClientRect();
+      const scaleX=c.width/rect.width,scaleY=c.height/rect.height;
+      const endX=(touch.clientX-rect.left)*scaleX,endY=(touch.clientY-rect.top)*scaleY;
+      if(startX&&Math.abs(endX-startX)>10){
+        const txt=prompt('Add label (optional):');
+        S.annotations.push({x1:startX,y1:startY,x2:endX,y2:endY,color:'#ff4757',text:txt||''});
+        renderCanvas();
+      }
+      startX=null;
+    };
+  }else{
+    const c=document.getElementById('preview-canvas');
+    if(c){c.style.cursor='default';c.onmousedown=null;c.onmouseup=null;c.ontouchstart=null;c.ontouchend=null}
+  }
+  render();
+}
+
+// ── Export ───────────────────────────────
+function exportImage(){
+  if(!S.isPro&&S.exports>=MAX_FREE_EXPORTS){
+    toast('🔒 Free limit reached. Go Pro for unlimited exports!');
+    goPro();return;
+  }
+  const c=document.getElementById('preview-canvas');
+  c.toBlob(blob=>{
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='framecraft-'+Date.now()+'.png';
+    a.click();URL.revokeObjectURL(url);
+    S.exports++;save('exports',S.exports);render();
+    toast('✅ Downloaded!');
+  },'image/png');
+}
+
+async function copyImage(){
+  if(!S.isPro&&S.exports>=MAX_FREE_EXPORTS){
+    toast('🔒 Free limit reached. Go Pro!');goPro();return;
+  }
+  const c=document.getElementById('preview-canvas');
+  c.toBlob(async blob=>{
+    try{await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+      S.exports++;save('exports',S.exports);render();
+      toast('📋 Copied! Paste anywhere.');
+    }catch(e){toast('Copy failed. Try Export instead.')}
+  },'image/png');
+}
+
+function resetAll(){S.style='gradient-purple';S.frame='none';S.cornerRadius=24;S.shadow=true;
+  S.annotations=[];S.annotationMode=false;renderCanvas();render()}
+
+function goPro(){S.isPro=true;save('pro',true);toast('🎉 You\'re now Pro! Unlimited exports + no watermark.');render()}
+
+init();
+</script>
+</body>
+</html>
