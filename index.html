@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self';">
+<meta name="description" content="FrameCraft — Beautiful screenshot beautifier. Add gradient backgrounds, device frames, annotations, rounded corners, and shadows to your screenshots. Free PWA, works offline.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f0f1a">
@@ -26,12 +28,14 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .dropzone{border:2px dashed var(--border);border-radius:var(--radius);padding:48px 24px;
   text-align:center;cursor:pointer;transition:all 0.2s;background:var(--card)}
 .dropzone:hover,.dropzone.drag{border-color:var(--accent);background:rgba(124,58,237,0.05)}
+.dropzone:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .dropzone-icon{font-size:3rem;margin-bottom:12px}
 .dropzone-text{font-size:1rem;font-weight:600}
 .dropzone-hint{color:var(--dim);font-size:0.8rem;margin-top:6px}
 .paste-btn{background:var(--card);border:1px solid var(--border);color:var(--text);
   padding:10px 20px;border-radius:50px;font-size:0.85rem;cursor:pointer;margin-top:16px;font-weight:600}
 .paste-btn:active{transform:scale(0.96)}
+.paste-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* Editor */
 .editor-layout{display:flex;flex-direction:column;gap:16px}
@@ -46,19 +50,23 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   padding:8px 14px;border-radius:12px;font-size:0.8rem;cursor:pointer;font-weight:600;
   transition:all 0.15s;white-space:nowrap}
 .tool-btn:active{transform:scale(0.94)}
+.tool-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .tool-btn.active{border-color:var(--accent);background:rgba(124,58,237,0.15)}
 .tool-btn.color-swatch{padding:6px;width:36px;height:36px;border-radius:50%}
+.tool-btn.color-swatch.active{box-shadow:0 0 0 3px var(--accent)}
 
 /* Sliders */
 .slider-group{width:100%;margin:4px 0}
 .slider-group label{font-size:0.75rem;color:var(--dim);display:flex;justify-content:space-between;margin-bottom:2px}
 .slider-group input[type=range]{width:100%;accent-color:var(--accent)}
+.slider-group input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
 
 /* Export bar */
 .export-bar{display:flex;gap:8px;margin-top:12px}
 .btn{background:var(--accent);color:#fff;border:none;padding:12px 20px;border-radius:50px;
   font-size:0.9rem;font-weight:700;cursor:pointer;transition:transform 0.15s;flex:1;text-align:center}
 .btn:active{transform:scale(0.96)}
+.btn:focus-visible{outline:2px solid var(--text);outline-offset:2px}
 .btn-outline{background:transparent;border:2px solid var(--accent);color:var(--accent)}
 
 /* Annotation mode */
@@ -84,7 +92,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 </head>
 <body>
 <div class="app" id="app"></div>
-<input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFile(this)">
+<input type="file" id="file-input" accept="image/*" style="display:none" aria-label="Choose screenshot image to upload">
 
 <script>
 // ═══════════════════════════════════════════
@@ -94,7 +102,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 window.addEventListener('error',()=>{
   document.getElementById('app').innerHTML=`<div class="error-overlay"><div class="error-dialog">
     <h2>⚠️ Oops!</h2><p>Something went wrong.</p>
-    <button class="btn" onclick="init()" style="margin-top:16px">🔄 Reload</button></div></div>`;
+    <button class="btn" data-action="reload" style="margin-top:16px">🔄 Reload</button></div></div>`;
 });
 
 // State
@@ -104,9 +112,10 @@ const S={screen:'upload',image:null,style:'gradient-purple',frame:'none',
 const MAX_FREE_EXPORTS=3;
 
 function load(k,d){try{return JSON.parse(localStorage.getItem('fc_'+k))}catch(e){return d}}
-function save(k,v){localStorage.setItem('fc_'+k,JSON.stringify(v))}
+function save(k,v){try{localStorage.setItem('fc_'+k,JSON.stringify(v))}catch(e){}}
 function toast(m){let t=document.querySelector('.toast');if(t)t.remove();
-  t=document.createElement('div');t.className='toast';t.textContent=m;
+  t=document.createElement('div');t.className='toast';t.setAttribute('role','status');
+  t.setAttribute('aria-live','polite');t.textContent=m;
   document.body.appendChild(t);setTimeout(()=>t.remove(),2500)}
 
 // Gradients
@@ -279,14 +288,14 @@ function init(){S.screen=S.image?'editor':'upload';render()}
 function renderUpload(){
   return `<div class="screen active">
     <div class="header"><h1>📸 FrameCraft</h1><p>Beautiful screenshots in seconds</p></div>
-    <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+    <div class="dropzone" id="dropzone" data-action="upload" role="button" aria-label="Upload screenshot" tabindex="0">
       <div class="dropzone-icon">🖼️</div>
       <div class="dropzone-text">Drop your screenshot here</div>
       <div class="dropzone-hint">or tap to browse · PNG, JPG, WebP</div>
     </div>
-    <button class="paste-btn" onclick="pasteImage()" style="margin-top:12px;width:100%">📋 Paste from Clipboard</button>
+    <button class="paste-btn" data-action="paste" style="margin-top:12px;width:100%">📋 Paste from Clipboard</button>
     ${S.isPro?'<div class="pro-badge">PRO</div>':''}
-    ${!S.isPro?`<button class="paste-btn" onclick="goPro()" style="margin-top:8px;width:100%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none">⭐ Go Pro · $2.99 lifetime</button>`:''}
+    ${!S.isPro?`<button class="paste-btn" data-action="goPro" style="margin-top:8px;width:100%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none">⭐ Go Pro · $2.99 lifetime</button>`:''}
   </div>`;
 }
 
@@ -294,49 +303,141 @@ function renderEditor(){
   return `<div class="screen active">
     <div class="editor-layout">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <button class="tool-btn" onclick="S.image=null;S.screen='upload';render()">← Back</button>
+        <button class="tool-btn" data-action="back">← Back</button>
         <span style="font-weight:700;color:var(--dim)">FrameCraft</span>
-        <button class="tool-btn" onclick="resetAll()">🔄 Reset</button>
+        <button class="tool-btn" data-action="reset">🔄 Reset</button>
       </div>
-      <div class="preview-area" id="preview-area"><canvas id="preview-canvas"></canvas></div>
+      <div class="preview-area" id="preview-area"><canvas id="preview-canvas" role="img" aria-label="Screenshot preview"></canvas></div>
       ${S.annotationMode?'<div class="annotation-tip">🎯 Annotation mode: tap and drag to draw an arrow</div>':''}
       <div class="toolbar">
         <div class="tool-group">
           <div class="tool-group-label">Background</div>
           ${GRADIENTS.map(g=>`<button class="tool-btn color-swatch ${S.style===g.id?'active':''}"
             style="background:linear-gradient(135deg,${g.colors[0]},${g.colors[1]})" title="${g.name}"
-            onclick="S.style='${g.id}';renderCanvas();updateActive()"></button>`).join('')}
+            data-action="gradient" data-gradient-id="${g.id}" role="radio" aria-checked="${S.style===g.id}" aria-label="${g.name} background"></button>`).join('')}
         </div>
         <div class="tool-group">
           <div class="tool-group-label">Frame</div>
           ${FRAMES.map(f=>`<button class="tool-btn ${S.frame===f.id?'active':''}"
-            onclick="S.frame='${f.id}';renderCanvas();updateActive()">${f.name}</button>`).join('')}
+            data-action="frame" data-frame-id="${f.id}" role="radio" aria-checked="${S.frame===f.id}" aria-label="${f.name} frame">${f.name}</button>`).join('')}
         </div>
         <div class="tool-group">
           <div class="tool-group-label">Tools</div>
-          <button class="tool-btn ${S.annotationMode?'active':''}" onclick="toggleAnnotations()">↗ Annotate</button>
-          <button class="tool-btn" onclick="S.shadow=!S.shadow;renderCanvas();updateActive()"
+          <button class="tool-btn ${S.annotationMode?'active':''}" data-action="annotate" role="switch" aria-checked="${S.annotationMode}" aria-label="Annotation mode">↗ Annotate</button>
+          <button class="tool-btn" data-action="shadow" role="switch" aria-checked="${S.shadow}" aria-label="Shadow"
             style="${S.shadow?'border-color:var(--accent)':''}">${S.shadow?'🌑 Shadow On':'☀️ Shadow Off'}</button>
         </div>
       </div>
       <div class="slider-group">
         <label>Rounded Corners <span>${S.cornerRadius}px</span></label>
-        <input type="range" min="0" max="40" value="${S.cornerRadius}"
+        <input type="range" min="0" max="40" value="${S.cornerRadius}" aria-label="Corner radius" aria-valuenow="${S.cornerRadius}" aria-valuemin="0" aria-valuemax="40"
           oninput="S.cornerRadius=parseInt(this.value);this.nextElementSibling.textContent=S.cornerRadius+'px';renderCanvas()">
         <span style="display:none"></span>
       </div>
       <div class="export-bar">
-        <button class="btn" onclick="exportImage()">📥 Export PNG</button>
-        <button class="btn btn-outline" onclick="copyImage()">📋 Copy</button>
+        <button class="btn" data-action="export" aria-label="Export as PNG">📥 Export PNG</button>
+        <button class="btn btn-outline" data-action="copy" aria-label="Copy to clipboard">📋 Copy</button>
       </div>
-      <div class="export-counter">${S.isPro?'∞':'Free exports: '+(MAX_FREE_EXPORTS-S.exports)+' remaining'}</div>
+      <div class="export-counter" aria-live="polite">${S.isPro?'∞':'Free exports: '+(MAX_FREE_EXPORTS-S.exports)+' remaining'}</div>
     </div></div>`;
 }
 
 function updateActive(){
   document.querySelectorAll('.tool-btn.color-swatch').forEach(b=>{
-    S.style===b.onclick?.toString().match(/'([^']+)'/)?.[1]?b.classList.add('active'):b.classList.remove('active')});
+    const gid=b.getAttribute('data-gradient-id');
+    if(gid===S.style) b.classList.add('active'); else b.classList.remove('active');
+  });
+  document.querySelectorAll('.tool-btn[data-frame-id]').forEach(b=>{
+    const fid=b.getAttribute('data-frame-id');
+    if(fid===S.frame) b.classList.add('active'); else b.classList.remove('active');
+  });
 }
+
+// ── Event Delegation ─────────────────────
+document.getElementById('app').addEventListener('click',e=>{
+  const btn=e.target.closest('[data-action]');
+  if(!btn) return;
+  const action=btn.getAttribute('data-action');
+  switch(action){
+    case 'upload':
+      document.getElementById('file-input').click();
+      break;
+    case 'paste':
+      pasteImage();
+      break;
+    case 'goPro':
+      goPro();
+      break;
+    case 'back':
+      S.image=null;S.screen='upload';render();
+      break;
+    case 'reset':
+      resetAll();
+      break;
+    case 'gradient':
+      S.style=btn.getAttribute('data-gradient-id');
+      renderCanvas();updateActive();
+      break;
+    case 'frame':
+      S.frame=btn.getAttribute('data-frame-id');
+      renderCanvas();updateActive();
+      break;
+    case 'annotate':
+      toggleAnnotations();
+      break;
+    case 'shadow':
+      S.shadow=!S.shadow;renderCanvas();render();
+      break;
+    case 'export':
+      exportImage();
+      break;
+    case 'copy':
+      copyImage();
+      break;
+    case 'reload':
+      init();
+      break;
+  }
+});
+
+// Keyboard: Enter/Space on focused elements
+document.getElementById('app').addEventListener('keydown',e=>{
+  // Ctrl+S / Cmd+S — export
+  if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();exportImage();return;}
+  // Ctrl+C / Cmd+C — copy (let native work unless on canvas)
+  if((e.ctrlKey||e.metaKey)&&e.key==='c'){
+    const canvas=document.getElementById('preview-canvas');
+    if(canvas&&document.activeElement===canvas){e.preventDefault();copyImage();return;}
+  }
+  // Escape — cancel annotation mode
+  if(e.key==='Escape'){
+    if(S.annotationMode){toggleAnnotations();return;}
+  }
+  // Enter/Space on actionable elements
+  if(e.key==='Enter'||e.key===' '){
+    const el=e.target.closest('[data-action], [role="button"], [role="switch"], [role="radio"]');
+    if(el){
+      e.preventDefault();
+      if(el.hasAttribute('data-action')) el.click();
+      else if(el.getAttribute('role')==='switch') el.click();
+      else if(el.getAttribute('role')==='radio') el.click();
+      else if(el.getAttribute('role')==='button') el.click();
+    }
+  }
+});
+
+// Arrow keys on corner radius slider
+document.addEventListener('keydown',e=>{
+  if(e.target.matches('input[type="range"][aria-label="Corner radius"]')){
+    if(e.key==='ArrowRight'||e.key==='ArrowUp'){
+      e.preventDefault();
+      e.target.stepUp();e.target.dispatchEvent(new Event('input',{bubbles:true}));
+    }else if(e.key==='ArrowLeft'||e.key==='ArrowDown'){
+      e.preventDefault();
+      e.target.stepDown();e.target.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+  }
+});
 
 // ── Image Handling ───────────────────────
 function handleFile(input){
@@ -365,6 +466,11 @@ async function pasteImage(){
 
 // Drop zone
 document.addEventListener('DOMContentLoaded',()=>{
+  setupDropZone();
+  init();
+});
+
+function setupDropZone(){
   const dz=document.getElementById('dropzone');
   if(dz){
     dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag')});
@@ -379,8 +485,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       }
     });
   }
-  init();
-});
+}
 
 // ── Annotations ──────────────────────────
 function toggleAnnotations(){
@@ -461,6 +566,11 @@ function resetAll(){S.style='gradient-purple';S.frame='none';S.cornerRadius=24;S
   S.annotations=[];S.annotationMode=false;renderCanvas();render()}
 
 function goPro(){S.isPro=true;save('pro',true);toast('🎉 You\'re now Pro! Unlimited exports + no watermark.');render()}
+
+// Service Worker registration
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
 
 init();
 </script>
